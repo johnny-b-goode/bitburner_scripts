@@ -1,7 +1,7 @@
 var farmingFile = "farming.txt";
 var harvestersFile = "harvesters.txt";
 var localFarmingFile = ("farming-" + getHostname() + ".txt");
-var nodeScriptFile = "hacknode.script";
+var nodeScriptFile = "hack_node.script";
 var numSleepInterval = 10000;
 var numAutohackSize = getScriptRam("autohack.script", "home");
 var numHacknodeSize = getScriptRam(nodeScriptFile, "home");
