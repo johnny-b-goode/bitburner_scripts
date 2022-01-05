@@ -1,0 +1,135 @@
+/** @param {NS} ns **/
+var numBufferMoney = 1000000000;
+var numCommissionFee = 100000;
+//percentage of max observed price at which to force sale
+var numUpperSellThreshold = 0.8;
+var numMinProfitPercent = 0.05;
+var symbols = [];
+var strLong = "Long";
+var strShort = "Short";
+
+export async function main(ns) {
+//	ns.tprint("main()");
+	initSymbols(ns);
+	setMaxBudgetForStocks(ns);
+	watch(ns);
+	trade(ns);
+}
+
+//we want to use an object for the symbols, to conveniently store some additional data
+//{
+//symbol: string,
+//minPrice: num,
+//maxPrice: num,
+//budget: num,
+//prevForecast: num
+//}
+function initSymbols(ns) {
+//	ns.tprint("initSymbols()");
+	var tempSymbols = ns.stock.getSymbols();
+
+	for (var i = 0; i < tempSymbols.length; i++) {
+		symbols.push({	"symbol": tempSymbols[i],
+						minPrice: ns.stock.getAskPrice(tempSymbols[i]),
+						maxPrice: ns.stock.getAskPrice(tempSymbols[i]),
+						budget: 0,
+						prevForecast: ns.stock.getForecast(tempSymbols[i])});
+	}
+
+//	for (var i = 0; i < symbols.length; i++) {
+//		ns.tprint(symbols[i]);
+//	}
+}
+
+//calculate the maximum investment budget for each symbol
+function setMaxBudgetForStocks(ns) {
+//	ns.tprint("setMaxBudgetForStocks()");
+	var numTotalBudget = (ns.getServerMoneyAvailable("home") - numBufferMoney);
+	var numTotalMarketCap = 0;
+
+	for (var i = 0; i < symbols.length; i++) {
+		numTotalMarketCap += (ns.stock.getMaxShares(symbols[i].symbol) * ns.stock.getAskPrice(symbols[i].symbol));
+	}
+
+	if (numTotalMarketCap <= 0) {
+		ns.tprint("numTotalMarketCap is less than or equal to zero");
+		exit;
+	}
+
+	for (var i = 0; i < symbols.length; i++) {
+		if (numTotalMarketCap <= numTotalBudget) {
+			symbols[i] = {	"symbol": symbols[i].symbol,
+							minPrice: symbols[i].minPrice,
+							maxPrice: symbols[i].maxPrice,
+							budget: ((ns.stock.getMaxShares(symbols[i].symbol) - ns.stock.getPosition(symbols[i].symbol)[0]) * ns.stock.getAskPrice(symbols[i].symbol)),
+							prevForecast: symbols[i].prevForecast};
+		}
+		else {
+			symbols[i] = {	"symbol": symbols[i].symbol,
+							minPrice: symbols[i].minPrice,
+							maxPrice: symbols[i].maxPrice,
+							budget: (numTotalBudget * ((ns.stock.getMaxShares(symbols[i].symbol) * ns.stock.getAskPrice(symbols[i].symbol)) / numTotalMarketCap)),
+							prevForecast: symbols[i].prevForecast};
+		}
+	}
+}
+
+function watch(ns) {
+
+}
+
+function trade(ns) {
+//	ns.tprint("trade()");
+	for (var i = 0; i < symbols.length; i++) {
+		var numVolatility = ns.stock.getVolatility(symbols[i].symbol);
+		//this may or may not be the way it is calculated internally (particularly the use of getPrice())
+		var numSpreadPercent = ((ns.stock.getAskPrice(symbols[i].symbol) - ns.stock.getBidPrice(symbols[i].symbol)) / ns.stock.getPrice(symbols[i].symbol));
+		var numForecast = ns.stock.getForecast(symbols[i].symbol);
+		var arrPosition = ns.stock.getPosition(symbols[i].symbol);
+		var numCurrentPrice = ns.stock.getAskPrice(symbols[i].symbol);
+
+		//sell long
+		if ((numCurrentPrice >= (symbols[i].maxPrice * numUpperSellThreshold)) ||
+		(numForecast < 0.5) && (symbols[i].prevForecast > 0.5)
+		) {
+			ns.print("considering long sale of " + symbols[i].symbol + "...");
+			var numProfit = ns.stock.getSaleGain(symbols[i].symbol, arrPosition[0], strLong);
+
+			if ((numProfit / (arrPosition[0] * arrPosition[1])) > numMinProfitPercent) {
+				ns.stock.sell();
+			}
+		}
+
+		//sell short
+		//ns.stock.getSaleGain(symbols[i].symbol, arrPosition[2], strShort);
+		//ns.tprint("considering short sale of " +  + "...");
+
+		//buy long
+		//ns.stock.buy(symbols[i].symbol, num_shares_to_buy);
+
+		//buy short
+		//ns.stock.short(symbols[i].symbol, num_shares_to_short);
+
+		//I should probably turn the symbol into a proper object to clean this mess up
+		symbols[i] = {	"symbol": symbols[i].symbol,
+						minPrice: symbols[i].minPrice,
+						maxPrice: symbols[i].maxPrice,
+						budget: symbols[i].budget,
+						prevForecast: numForecast};
+
+		if (numCurrentPrice > symbols[i].maxPrice) {
+			symbols[i] = {	"symbol": symbols[i].symbol,
+							minPrice: symbols[i].minPrice,
+							maxPrice: numCurrentPrice,
+							budget: symbols[i].budget,
+							prevForecast: symbols[i].prevForecast};
+		}
+		else if (numCurrentPrice < symbols[i].minPrice) {
+			symbols[i] = {	"symbol": symbols[i].symbol,
+							minPrice: numCurrentPrice,
+							maxPrice: symbols[i].maxPrice,
+							budget: symbols[i].budget,
+							prevForecast: symbols[i].prevForecast};
+		}
+	}
+}

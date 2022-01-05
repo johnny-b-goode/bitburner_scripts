@@ -126,12 +126,12 @@ function loadFileLines(fileName) {
 }
 
 function loadNodes() {
-	if (ls(getHostname(), "farming-").length > 0) {
-		consolidateFiles();
-	}
-
 	if (fileExists(harvestersFile, "home")) {
 		harvesters = loadFileLines(harvestersFile);
+	}
+
+	if (harvesters.length == 0) {
+		harvesters.push("home");
 	}
 
 	if (fileExists(farmingFile, "home")) {
@@ -158,32 +158,6 @@ function loadNodes() {
 	print("currently loaded nodes:");
 	for (var i = 0; i < nodes.length; i++) {
 		print("	" + nodes[i]);
-	}
-}
-
-function consolidateFiles() {
-	if (getHostname() == "home") {
-		var files = ls(getHostname(), "farming-");
-
-		for (var i = 0; i < files.length; i++) {
-			print("integrating " + files[i] + "...");
-			var lines = loadFileLines(files[i]);
-			var listedNodes = loadFileLines(farmingFile);
-
-			for (var j = 0; j < lines.length; j++) {
-				if (lines[j].startsWith("home") == false) {
-					if (listedNodes.includes(lines[j]) == false) {
-						if ((listedNodes.length > 0) || (j > 0)) {
-							write(farmingFile, "\n");
-						}
-
-						write(farmingFile, lines[j]);
-					}
-				}
-			}
-
-			rm(files[i]);
-		}
 	}
 }
 
