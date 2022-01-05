@@ -1,0 +1,39 @@
+//args[0] - args[n]
+var numWeakenRate = 0.05;
+var numMoneyThreshold = 0.75;
+
+disableLog("getServerSecurityLevel");
+
+if (args.length < 1) {
+	tprint ("Please specify a node name")
+	exit;
+}
+
+if (serverExists(args[0]) == false) {
+	tprint (args[0] + " does not exist")
+	exit;
+}
+
+if (hasRootAccess(args[0]) == false) {
+	tprint ("You do not currently have root access to " + args[0])
+	exit;
+}
+
+if (args.length >= 2) {
+	numWeakenRate *= args[1];
+}
+
+while(true) {
+	while (getServerSecurityLevel(args[0]) > (getServerMinSecurityLevel(args[0]) + numWeakenRate)) {
+//		print("weakinging " + args[0]);
+		weaken(args[0]);
+	}
+
+	if (getServerMoneyAvailable(args[0]) < (getServerMaxMoney(args[0]) * numMoneyThreshold)) {
+//		print("growing " + args[0]);
+		grow(args[0]);
+	}
+	else {
+		hack(args[0]);
+	}
+}

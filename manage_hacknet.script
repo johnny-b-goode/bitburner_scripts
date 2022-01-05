@@ -1,0 +1,186 @@
+var bufferMoney = 1000000;
+var numHacknetProductionPercent = 0.25;
+var numSleepInterval = 10000;
+var numSleepTimeMax = 3600000;
+var referenceNode = 0;
+var numMaxNodes = 32;
+
+//a better way to do this would be to calculate the return per
+//dollar investment and purchase based on the best return
+//unfortunately there is not a simple way to calculate that
+//return, despite it being shown in the Hacknet screen...
+//
+//I would have to reverse-engineer the formula used to
+//calculate the return for a given upgrade
+
+function calculateLevelUpgradeProfit () {
+	var retVar = 0;
+
+	//
+
+	return retVar;
+}
+
+function findMinInArray (arr) {
+	var retVar = 0;
+	var lowestNumber = arr[0];
+
+	for (var i = 0; i < arr.length; i++) {
+		if (arr[i] < lowestNumber) {
+			lowestNumber = arr[i];
+			retVar = i;
+		}
+	}
+
+	return retVar;
+}
+
+while (true) {
+	if (hacknet.numNodes() <= 0) {
+		print("there are currently no nodes in the hacknet");
+
+		while (true) {
+			if (hacknet.getPurchaseNodeCost() <= (getServerMoneyAvailable("home") - bufferMoney)) {
+				hacknet.purchaseNode();
+				break;
+			}
+		}
+	}
+
+	//get / keep everything in sync
+	for (var i = 1; i < hacknet.numNodes(); i++) {
+		while (hacknet.getNodeStats(i).level < hacknet.getNodeStats(referenceNode).level) {
+			if (hacknet.getLevelUpgradeCost(i, 1) < (getServerMoneyAvailable("home") - bufferMoney)) {
+				hacknet.upgradeLevel(i, 1);
+			}
+			else {
+				sleep(numSleepInterval);
+			}
+		}
+
+		while (hacknet.getNodeStats(i).ram < hacknet.getNodeStats(referenceNode).ram) {
+			if (hacknet.getRamUpgradeCost(i, 1) < (getServerMoneyAvailable("home") - bufferMoney)) {
+				hacknet.upgradeRam(i, 1);
+			}
+			else {
+				sleep(numSleepInterval);
+			}
+		}
+
+		while (hacknet.getNodeStats(i).cores < hacknet.getNodeStats(referenceNode).cores) {
+			if (hacknet.getCoreUpgradeCost(i, 1) < (getServerMoneyAvailable("home") - bufferMoney)) {
+				hacknet.upgradeCore(i, 1);
+			}
+			else {
+				sleep(numSleepInterval);
+			}
+		}
+	}
+
+	//costs[0] == new node
+	//costs[1] == level
+	//costs[2] == ram
+	//costs[3] == cores
+	var costs = [
+		hacknet.getPurchaseNodeCost(),
+		(hacknet.getLevelUpgradeCost(referenceNode, 1) * hacknet.numNodes()),
+		(hacknet.getRamUpgradeCost(referenceNode, 1) * hacknet.numNodes()),
+		(hacknet.getCoreUpgradeCost(referenceNode, 1) * hacknet.numNodes())
+	];
+
+	if (hacknet.numNodes() >= numMaxNodes) {
+		costs[0] = Infinity;
+	}
+
+	var cheapestOption = findMinInArray(costs);
+
+	print("costs[0]: " + costs[0]);
+	print("costs[1]: " + costs[1]);
+	print("costs[2]: " + costs[2]);
+	print("costs[3]: " + costs[3]);
+	print("the cheapest option is costs[" + cheapestOption + "]");
+
+	if (costs[cheapestOption] == Infinity) {
+		break;
+	}
+
+	//The best I have come up with to optimize earning rate is rather complicated,
+	//but basically it would be to generate the cost of the next upgrade for each option,
+	//then to generate the cost of the second upgrade for that same option.
+	//
+	//The next step would be to calculate the time to purchase the next upgrade for each
+	//option, then to calculate the opportunity cost for each option (compared to each
+	//other option). Basically, this would be the time to purchase for a given option
+	//minus the time to purchase for the other options (where time to purchase for
+	//evaluated option is less than for the given option), multiplied by the future
+	//earning power for the evaluated option minus the current earning power (the
+	//difference with the evaluated option). For each option, there could be multiple
+	//different opportunity costs as compared to each other option. We could call this
+	//"immediate opportunity cost".
+	//
+	//The third step would be to calculate the cost for the next cheapest upgrade (ie,
+	//looking one step into the future), which would require two sets of calculations.
+	//The first would be to calculate the cost of the next upgrade for that option
+	//(theoretically, the cost of two levels of upgrade minus the cost of a single
+	//level of upgrade). The second set of calculations would be to compare the
+	//cheapest option from the first set to any of the remaining options (ie, it may
+	//be cheaper to purchase an upgrade in level now, but that the current cost of a
+	//RAM upgrade would then be cheaper than any of the next upgrade options [ie, 2
+	//levels of upgrade minus one level of upgrade]). This means the next cheapest
+	//upgrade could be different for each upgrade option.
+	//
+	//Once the next cheapest upgrade for each option is known, the new earn rate for
+	//each (current) upgrade option would need to be calculated, then the time it
+	//would take to purchase the next upgrade. The total earnings for the other
+	//upgrade options within that time could then be calculated. We could call this
+	//"deferred opportunity cost".
+	//
+	//The last step would be to evaluate the two sets of opportunity costs. It could
+	//be possible to have an option with higher immediate opportunity costs, but
+	//lower deferred opportunity costs (ie, costs a little more now, but earns more
+	//faster).
+	//
+	//In essence, I think the best option would be the one to get us to the next
+	//upgrade the fastest.
+
+	while (costs[cheapestOption] > (getServerMoneyAvailable("home") - bufferMoney)) {
+		//sleep(numSleepInterval);
+		//a somewhat naive calculation, but should be close enough
+		var numSleepTime = ((costs[cheapestOption] - (getServerMoneyAvailable("home") - bufferMoney)) / ((hacknet.getNodeStats(referenceNode).production * hacknet.numNodes()) * (1 / numHacknetProductionPercent)));
+		numSleepTime = Math.ceil(numSleepTime);
+		numSleepTime *= 1000;
+		numSleepTime += 1000;
+
+		if (numSleepTime > numSleepTimeMax) {
+			numSleepTime = numSleepTimeMax;
+		}
+
+		sleep(numSleepTime);
+		//print ("available funds: " + (getServerMoneyAvailable("home") - bufferMoney));
+	}
+
+	if (costs[cheapestOption] <= (getServerMoneyAvailable("home") - bufferMoney)) {
+		if (cheapestOption == 0) {
+			print("purchasing a new node");
+			hacknet.purchaseNode();
+		}
+		else if (cheapestOption == 1) {
+			print("purchasing level upgrade");
+			for (var i = 0; i < hacknet.numNodes(); i++) {
+				hacknet.upgradeLevel(i, 1);
+			}
+		}
+		else if (cheapestOption == 2) {
+			print("purchasing ram upgrade");
+			for (var i = 0; i < hacknet.numNodes(); i++) {
+				hacknet.upgradeRam(i, 1);
+			}
+		}
+		else if (cheapestOption == 3) {
+			print("purchasing core upgrade");
+			for (var i = 0; i < hacknet.numNodes(); i++) {
+				hacknet.upgradeCore(i, 1);
+			}
+		}
+	}
+}

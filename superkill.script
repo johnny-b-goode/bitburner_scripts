@@ -1,0 +1,29 @@
+var harvestersFile = "harvesters.txt";
+var harvesters = [];
+
+function loadFileLines(fileName) {
+	var retVar = [];
+
+	if (fileExists(fileName)) {
+		var fileBuffer = read(fileName);
+		var fileString = "";
+
+		for (var i = 0; i < fileBuffer.length; i++) {
+			fileString = (fileString + fileBuffer[i]);
+		}
+
+		retVar = fileString.split("\n");
+	}
+
+	return retVar;
+}
+
+if (fileExists(harvestersFile, "home")) {
+	harvesters = loadFileLines(harvestersFile);
+}
+
+for (var i = 0; i < harvesters.length; i++) {
+	if (hasRootAccess(harvesters[i])) {
+		killall(harvesters[i]);
+	}
+}

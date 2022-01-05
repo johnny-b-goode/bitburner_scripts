@@ -1,0 +1,137 @@
+//TODO: figure out how to get the name of the running script
+var autoHackScriptName = "autohack.script";
+var localFarmingFile = ("farming-" + getHostname() + ".txt");
+var farmManager = "home";
+var thresholdHackChance = 0.5;
+var excludedFiles = [
+	"autohack.script",
+	"AutoLink.exe",
+	"BruteSSH.exe",
+	"DeepscanV1.exe",
+	"farm.script",
+	"farming.txt",
+	"fl1ght.exe",
+	"FTPCrack.exe",
+	"hacknode.script",
+	"manage_hacknet.script",
+	"NUKE.exe",
+	"ServerProfiler.exe",
+	"test.script"
+];
+
+var nodes = scan(getHostname());
+var access = [];
+
+for (var i = 0; i < nodes.length; i++) {
+	if (hasRootAccess(nodes[i])) {
+		access.push("true");
+	}
+	else {
+		access.push("false");
+	}
+}
+
+function hasHackedAllNodes() {
+	var retVal = true;
+
+	for (var i = 0; i < nodes.length; i++) {
+		if (access[i] == "false") {
+			retVal = false;
+		}
+	}
+
+	return retVal;
+}
+
+while (hasHackedAllNodes() == false) {
+	for (var i = 0; i < nodes.length; i++) {
+		if (serverExists(nodes[i])) {
+//			if (access[i] == "false") {
+				print("evaluating " + nodes[i] + "...");
+
+				if (hasRootAccess(nodes[i]) == false) {
+					print("	no root access to " + nodes[i]);
+				}
+
+				print("	attempting to open ports...");
+
+				if (getServer(nodes[i]).sshPortOpen == false) {
+					if (fileExists("BruteSSH.exe", "home")) {
+						brutessh(nodes[i]);
+					}
+				}
+
+				if (getServer(nodes[i]).ftpPortOpen == false) {
+					if (fileExists("FTPCrack.exe", "home")) {
+						ftpcrack(nodes[i]);
+					}
+				}
+
+				if (getServer(nodes[i]).httpPortOpen == false) {
+					if (fileExists("HTTPWorm.exe", "home")) {
+						httpworm(nodes[i]);
+					}
+				}
+
+				if (getServer(nodes[i]).smtpPortOpen == false) {
+					if (fileExists("relaySMTP.exe", "home")) {
+						relaysmtp(nodes[i]);
+					}
+				}
+
+				if (getServer(nodes[i]).sqlPortOpen == false) {
+					if (fileExists("SQLInject.exe", "home")) {
+						sqlinject(nodes[i]);
+					}
+				}
+
+				if (hasRootAccess(nodes[i]) == false) {
+					print("	evaluating probability of successful hack...");
+
+					if (getServer(nodes[i]).openPortCount >= getServer(nodes[i]).numOpenPortsRequired) {
+						if (hackAnalyzeChance(nodes[i]) > thresholdHackChance) {
+							nuke(nodes[i]);
+						}
+					}
+				}
+
+				if (hasRootAccess(nodes[i])) {
+					access[i] = "true";
+
+//					if (getServer(nodes[i]).backdoorInstalled == false) {
+//						installBackdoor(nodes[i]);
+//					}
+
+					print("	searching for files...");
+					var files = ls(nodes[i], ".script");
+					files = files.concat(ls(nodes[i], ".lit"));
+					files = files.concat(ls(nodes[i], ".txt"));
+
+					for (var j = 0; j < files.length; j++) {
+						if (fileExists(files[j], "home") == false) {
+							if (excludedFiles.includes(files[j]) == false) {
+								scp (files[j], nodes[i], "home");
+							}
+						}
+					}
+
+					if ((getServerMaxRam(nodes[i]) - getServerUsedRam(nodes[i])) > getScriptRam(autoHackScriptName)) {
+						scp(autoHackScriptName, nodes[i]);
+						exec(autoHackScriptName, nodes[i]);
+					}
+				}
+//			}
+		}
+	}
+}
+
+for (var i = 0; i < nodes.length; i++) {
+	if (i > 0) {
+		write(localFarmingFile, "\n");
+	}
+
+	write(localFarmingFile, nodes[i]);
+}
+
+scp(localFarmingFile, farmManager);
+exit;

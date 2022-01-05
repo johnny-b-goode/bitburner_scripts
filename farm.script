@@ -1,0 +1,232 @@
+var farmingFile = "farming.txt";
+var harvestersFile = "harvesters.txt";
+var localFarmingFile = ("farming-" + getHostname() + ".txt");
+var nodeScriptFile = "hacknode.script";
+var numSleepInterval = 10000;
+var numAutohackSize = getScriptRam("autohack.script", "home");
+var numHacknodeSize = getScriptRam(nodeScriptFile, "home");
+var numMaxSecurityRating = 0;
+var nodes = [];
+var harvesters = [];
+access = [];
+
+//tprint("Farming File: " + farmingFile);
+//tprint("Local Farming File: " + localFarmingFile);
+
+disableLog("getServerMaxRam");
+disableLog("getServerUsedRam");
+disableLog("getServerSecurityLevel");
+
+function availableNodeRam(nodeName) {
+//	print("availableNodeRam(" + nodeName + ")");
+	var retVal = 0;
+
+	retVal = getServerMaxRam(nodeName);
+	retVal -= getServerUsedRam(nodeName);
+	retVal -= numAutohackSize;
+
+	if (retVal < 0) {
+		retVal = 0;
+	}
+
+	return retVal;
+}
+
+function harvesterWithMostAvailRam() {
+//	print("harvesterWithMostAvailRam()");
+	var retVal = "";
+
+	for (var i = 0; i < harvesters.length; i++) {
+		var candidateRam = availableNodeRam(harvesters[i]);
+
+		if (i == 0) {
+			retVal = harvesters[i];
+		}
+		else {
+			if (candidateRam > availableNodeRam(retVal)) {
+				retVal = harvesters[i];
+			}
+		}
+	}
+
+	return retVal;
+}
+
+function availableNodeThreads(nodeName) {
+//	print("availableNodeThreads(" + nodeName + ")");
+	var retVal = 0;
+
+	retVal = (availableNodeRam(nodeName) / numHacknodeSize);
+	retVal = Math.floor(retVal);
+
+	return retVal;
+}
+
+function totalHarvesterThreads () {
+//	print("totalHarvesterThreads()");
+	var retVal = 0;
+
+	for (var i = 0; i < harvesters.length; i++) {
+		retVal += availableNodeThreads(harvesters[i]);
+	}
+
+	return retVal;
+}
+
+function maxSecurityRating() {
+//	print("maxSecurityRating()");
+	if (numMaxSecurityRating <= 0) {
+		for (var i = 0; i < nodes.length; i++) {
+			var securityLevel = getServerSecurityLevel(nodes[i]);
+
+			if (securityLevel > numMaxSecurityRating) {
+				numMaxSecurityRating = securityLevel;
+			}
+		}
+	}
+
+	return numMaxSecurityRating;
+}
+
+function nodeProportion(nodeName) {
+//	print("nodeProportion(" + nodeName + ")");
+	var retVal = 0;
+
+	retVal = (getServerSecurityLevel(nodeName) / maxSecurityRating());
+
+	return retVal;
+}
+
+function totalProportion () {
+//	print("totalProportion()");
+	var retVal = 0;
+
+	for (var i = 0; i < nodes.length; i++) {
+		retVal += nodeProportion(nodes[i]);
+	}
+
+	return retVal;
+}
+
+function loadFileLines(fileName) {
+	var retVar = [];
+
+	if (fileExists(fileName)) {
+		var fileBuffer = read(fileName);
+		var fileString = "";
+
+		for (var i = 0; i < fileBuffer.length; i++) {
+			fileString = (fileString + fileBuffer[i]);
+		}
+
+		retVar = fileString.split("\n");
+	}
+
+	return retVar;
+}
+
+function loadNodes() {
+	if (ls(getHostname(), "farming-").length > 0) {
+		consolidateFiles();
+	}
+
+	if (fileExists(harvestersFile, "home")) {
+		harvesters = loadFileLines(harvestersFile);
+	}
+
+	if (fileExists(farmingFile, "home")) {
+		nodes = loadFileLines(farmingFile);
+	}
+	else {
+		print(farmingFile + " does not exist. Generating local farming file...");
+
+		if (fileExists(localFarmingFile) == false) {
+			nodes = scan(getHostname());
+
+			for (var i = 0; i < nodes.length; i++) {
+				if (i > 0) {
+					write(localFarmingFile, "\n");
+				}
+
+				write(localFarmingFile, nodes[i]);
+			}
+		}
+
+		exit;
+	}
+
+	print("currently loaded nodes:");
+	for (var i = 0; i < nodes.length; i++) {
+		print("	" + nodes[i]);
+	}
+}
+
+function consolidateFiles() {
+	if (getHostname() == "home") {
+		var files = ls(getHostname(), "farming-");
+
+		for (var i = 0; i < files.length; i++) {
+			print("integrating " + files[i] + "...");
+			var lines = loadFileLines(files[i]);
+			var listedNodes = loadFileLines(farmingFile);
+
+			for (var j = 0; j < lines.length; j++) {
+				if (lines[j].startsWith("home") == false) {
+					if (listedNodes.includes(lines[j]) == false) {
+						if ((listedNodes.length > 0) || (j > 0)) {
+							write(farmingFile, "\n");
+						}
+
+						write(farmingFile, lines[j]);
+					}
+				}
+			}
+
+			rm(files[i]);
+		}
+	}
+}
+
+function balance() {
+	print("calculating thread proportions...");
+	var proportionalThreadsPerTarget = (totalHarvesterThreads() / totalProportion());
+	var threadsPerTarget = [];
+
+	for (var i = 0; i < nodes.length; i++) {
+		var threads = Math.floor((proportionalThreadsPerTarget * nodeProportion(nodes[i])));
+
+		if (threads <= 0) {
+			threads = 1;
+		}
+
+		threadsPerTarget.push({name: nodes[i], threads: threads});
+	}
+
+	print("sorting targets...");
+	threadsPerTarget.sort(
+		function (struct1, struct2) {
+			return (struct1.threads - struct2.threads);
+		}
+	);
+
+	print("harvesting targets...");
+	for (var i = 0; i < threadsPerTarget.length; i++) {
+		var harvester = harvesterWithMostAvailRam();
+		var threads = threadsPerTarget[i].threads;
+
+		if (availableNodeThreads(harvester) < threadsPerTarget[i].threads) {
+			threads = availableNodeThreads(harvester);
+		}
+
+		if (hasRootAccess(harvester)) {
+			if (hasRootAccess(threadsPerTarget[i].name)) {
+//				print("farming " + threadsPerTarget[i].name + " on " + harvester + "...");
+				scp(nodeScriptFile, harvester);
+				exec(nodeScriptFile, harvester, threads, threadsPerTarget[i].name, threads);
+			}
+		}
+	}
+}
+
+loadNodes();
+balance();
