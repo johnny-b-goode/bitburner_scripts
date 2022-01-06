@@ -1,7 +1,7 @@
 //TODO: figure out how to get the name of the running script
 var autoHackScriptName = "autohack.script";
-var localFarmingFile = ("farming-" + getHostname() + ".txt");
 var farmManager = "home";
+var numSleepTime = 10000;
 var thresholdHackChance = 0.5;
 var excludedFiles = [
 	"autohack.script",
@@ -12,126 +12,163 @@ var excludedFiles = [
 	"farming.txt",
 	"fl1ght.exe",
 	"FTPCrack.exe",
-	"hacknode.script",
+	"hack_node.script",
 	"manage_hacknet.script",
 	"NUKE.exe",
 	"ServerProfiler.exe",
-	"test.script"
+	"superkill.script",
+	"test.script",
+	"trade_stocks.ns"
 ];
 
-var nodes = scan(getHostname());
 var access = [];
 
-for (var i = 0; i < nodes.length; i++) {
-	if (hasRootAccess(nodes[i])) {
-		access.push("true");
-	}
-	else {
-		access.push("false");
+if (serverExists(args[0]) == false) {
+	print ("WARNING no servers excluded from hacking")
+}
+
+function initAccess() {
+	var nodes = scan(getHostname());
+
+	for (var i = 0; i < nodes.length; i++) {
+		if (args.includes(nodes[i]) == false) {
+			access.push({
+				name: nodes[i],
+				rootAccess: false,
+				filesDownloaded: false,
+				fullyHacked: false,
+				propagating: false
+			});
+
+			if (hasRootAccess(nodes[i])) {
+				access[i].rootAccess = true;
+			}
+		}
 	}
 }
 
 function hasHackedAllNodes() {
 	var retVal = true;
 
-	for (var i = 0; i < nodes.length; i++) {
-		if (access[i] == "false") {
+	for (var i = 0; i < access.length; i++) {
+		if (access[i].fullyHacked == false) {
 			retVal = false;
+			i = access.length;
 		}
 	}
 
 	return retVal;
 }
 
-while (hasHackedAllNodes() == false) {
-	for (var i = 0; i < nodes.length; i++) {
-		if (serverExists(nodes[i])) {
-//			if (access[i] == "false") {
-				print("evaluating " + nodes[i] + "...");
+initAccess();
 
-				if (hasRootAccess(nodes[i]) == false) {
-					print("	no root access to " + nodes[i]);
+while (hasHackedAllNodes() == false) {
+	for (var i = 0; i < access.length; i++) {
+		if (access[i].fullyHacked == false) {
+			if (serverExists(access[i].name)) {
+				print("evaluating " + access[i].name + "...");
+
+				if (hasRootAccess(access[i].name) == false) {
+					print("	no root access to " + access[i].name);
 				}
 
 				print("	attempting to open ports...");
 
-				if (getServer(nodes[i]).sshPortOpen == false) {
+				if (getServer(access[i].name).sshPortOpen == false) {
 					if (fileExists("BruteSSH.exe", "home")) {
-						brutessh(nodes[i]);
+						brutessh(access[i].name);
 					}
 				}
 
-				if (getServer(nodes[i]).ftpPortOpen == false) {
+				if (getServer(access[i].name).ftpPortOpen == false) {
 					if (fileExists("FTPCrack.exe", "home")) {
-						ftpcrack(nodes[i]);
+						ftpcrack(access[i].name);
 					}
 				}
 
-				if (getServer(nodes[i]).httpPortOpen == false) {
+				if (getServer(access[i].name).httpPortOpen == false) {
 					if (fileExists("HTTPWorm.exe", "home")) {
-						httpworm(nodes[i]);
+						httpworm(access[i].name);
 					}
 				}
 
-				if (getServer(nodes[i]).smtpPortOpen == false) {
+				if (getServer(access[i].name).smtpPortOpen == false) {
 					if (fileExists("relaySMTP.exe", "home")) {
-						relaysmtp(nodes[i]);
+						relaysmtp(access[i].name);
 					}
 				}
 
-				if (getServer(nodes[i]).sqlPortOpen == false) {
+				if (getServer(access[i].name).sqlPortOpen == false) {
 					if (fileExists("SQLInject.exe", "home")) {
-						sqlinject(nodes[i]);
+						sqlinject(access[i].name);
 					}
 				}
 
-				if (hasRootAccess(nodes[i]) == false) {
+				if (hasRootAccess(access[i].name) == false) {
 					print("	evaluating probability of successful hack...");
 
-					if (getServer(nodes[i]).openPortCount >= getServer(nodes[i]).numOpenPortsRequired) {
-						if (hackAnalyzeChance(nodes[i]) > thresholdHackChance) {
-							nuke(nodes[i]);
-						}
+					if (getServer(access[i].name).openPortCount >= getServer(access[i].name).numOpenPortsRequired) {
+						//if (hackAnalyzeChance(access[i].name) > thresholdHackChance) {
+							nuke(access[i].name);
+						//}
 					}
 				}
 
-				if (hasRootAccess(nodes[i])) {
-					access[i] = "true";
+				if (hasRootAccess(access[i].name)) {
+					if (access[i].rootAccess == false) {
+						access[i].rootAccess = true;
+					}
 
-//					if (getServer(nodes[i]).backdoorInstalled == false) {
-//						installBackdoor(nodes[i]);
-//					}
+					//if (getServer(access[i].name).backdoorInstalled == false) {
+					//	installBackdoor(access[i].name);
+					//}
 
-					print("	searching for files...");
-					var files = ls(nodes[i], ".script");
-					files = files.concat(ls(nodes[i], ".lit"));
-					files = files.concat(ls(nodes[i], ".txt"));
+					if (access[i].filesDownloaded == false) {
+						print("	searching for files...");
+						var files = ls(access[i].name, ".script");
+						files = files.concat(ls(access[i].name, ".lit"));
+						files = files.concat(ls(access[i].name, ".txt"));
 
-					for (var j = 0; j < files.length; j++) {
-						if (fileExists(files[j], "home") == false) {
-							if (excludedFiles.includes(files[j]) == false) {
-								scp (files[j], nodes[i], "home");
+						for (var j = 0; j < files.length; j++) {
+							if (fileExists(files[j], "home") == false) {
+								if (excludedFiles.includes(files[j]) == false) {
+									scp (files[j], access[i].name, "home");
+								}
 							}
 						}
+
+						access[i].filesDownloaded = true;
 					}
 
-					if ((getServerMaxRam(nodes[i]) - getServerUsedRam(nodes[i])) > getScriptRam(autoHackScriptName)) {
-						scp(autoHackScriptName, nodes[i]);
-						exec(autoHackScriptName, nodes[i]);
+					if (access[i].propagating == false) {
+						if ((getServerMaxRam(access[i].name) - getServerUsedRam(access[i].name)) > getScriptRam(autoHackScriptName)) {
+							scp(autoHackScriptName, access[i].name);
+							//exec(autoHackScriptName, access[i].name, 1, [getHostname()].concat(args));
+							//the above does not work because the function invocation cannot take an array
+							//and the spread operator does not work, at least in NS1
+							exec(autoHackScriptName, access[i].name, 1, getHostname());
+							access[i].propagating = true;
+						}
 					}
 				}
-//			}
+
+				if ((getServer(access[i].name).sshPortOpen == true)
+					&& (getServer(access[i].name).ftpPortOpen == true)
+					&& (getServer(access[i].name).httpPortOpen == true)
+					&& (getServer(access[i].name).smtpPortOpen == true)
+					&& (getServer(access[i].name).sqlPortOpen == true)
+					&& ((getServer(access[i].name).backdoorInstalled == true))
+					&& (access[i].rootAccess == true)
+					&& (access[i].filesDownloaded == true)
+					&& (access[i].propagating == true)
+				) {
+					access[i].fullyHacked = true;
+				}
+			}
 		}
 	}
+
+	sleep(numSleepTime);
 }
 
-for (var i = 0; i < nodes.length; i++) {
-	if (i > 0) {
-		write(localFarmingFile, "\n");
-	}
-
-	write(localFarmingFile, nodes[i]);
-}
-
-scp(localFarmingFile, farmManager);
 exit;
