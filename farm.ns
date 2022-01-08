@@ -1,206 +1,332 @@
-var farmingFile = "farming.txt";
-var harvestersFile = "harvesters.txt";
-var localFarmingFile = ("farming-" + getHostname() + ".txt");
-var nodeScriptFile = "hack_node.script";
-var numSleepInterval = 10000;
-var numAutohackSize = getScriptRam("autohack.script", "home");
-var numHacknodeSize = getScriptRam(nodeScriptFile, "home");
-var numMaxSecurityRating = 0;
-var nodes = [];
-var harvesters = [];
-access = [];
+/** @param {NS} ns **/
+export async function main(ns) {
+	var strHarvesterPrefix = "harvester";
+	var strNodeScriptFile = "hack_node.script";
+	var numSleepInterval = 10000;
+	var numNodeScriptSize = ns.getScriptRam(strNodeScriptFile, "home");
+	var numMinThreads = 1;
+	var numMaxThreads = 1000;
+	var numMinHarvesterUtilization = 0.9;
+	var numMinServerMoney = 1000000;
+	var crops = [];
+	var harvesters = [];
+	var access = [];
 
-//tprint("Farming File: " + farmingFile);
-//tprint("Local Farming File: " + localFarmingFile);
+	ns.disableLog("getServerMaxMoney");
+	ns.disableLog("getServerMaxRam");
+	ns.disableLog("getServerUsedRam");
+	ns.disableLog("getServerSecurityLevel");
 
-disableLog("getServerMaxRam");
-disableLog("getServerUsedRam");
-disableLog("getServerSecurityLevel");
+	function buildHarvester(strNodeName, numNodeThreads) {
+		ns.print("buildHarvester()");
 
-function availableNodeRam(nodeName) {
-//	print("availableNodeRam(" + nodeName + ")");
-	var retVal = 0;
-
-	retVal = getServerMaxRam(nodeName);
-	retVal -= getServerUsedRam(nodeName);
-	retVal -= numAutohackSize;
-
-	if (retVal < 0) {
-		retVal = 0;
+		return {
+			name: strNodeName,
+			availableThreads: numNodeThreads,
+		};
 	}
 
-	return retVal;
-}
+	function buildCrop(strNodeName, numSecurityLevel, numAllocatedThreads, boolBeingHarvested) {
+		ns.print("buildCrop()");
 
-function harvesterWithMostAvailRam() {
-//	print("harvesterWithMostAvailRam()");
-	var retVal = "";
+		return {
+			name: strNodeName,
+			securityLevel: numSecurityLevel,
+			allocatedThreads: numAllocatedThreads,
+			beingHarvested: boolBeingHarvested
+		};
+	}
 
-	for (var i = 0; i < harvesters.length; i++) {
-		var candidateRam = availableNodeRam(harvesters[i]);
+	function availableNodeRam(strNodeName) {
+		ns.print("availableNodeRam()");
+		var retVal = 0;
+		retVal = ns.getServerMaxRam(strNodeName);
+		retVal -= ns.getServerUsedRam(strNodeName);
 
-		if (i == 0) {
-			retVal = harvesters[i];
+		if (retVal < 0) {
+			retVal = 0;
 		}
-		else {
-			if (candidateRam > availableNodeRam(retVal)) {
-				retVal = harvesters[i];
+
+		return retVal;
+	}
+
+	function cleanHarvester(strNodeName) {
+		ns.print("cleanHarvester()");
+		var processes = ns.ps(strNodeName);
+
+		for (var i = 0; i < processes.length; i++) {
+			if (processes[i].filename == strNodeScriptFile) {
+				ns.kill(processes[i].pid);
 			}
 		}
 	}
 
-	return retVal;
-}
+	function harvesterWithMostAvailableRam() {
+		ns.print("harvesterWithMostAvailableRam()");
+		var numHarvesterIndex = 0;
 
-function availableNodeThreads(nodeName) {
-//	print("availableNodeThreads(" + nodeName + ")");
-	var retVal = 0;
-
-	retVal = (availableNodeRam(nodeName) / numHacknodeSize);
-	retVal = Math.floor(retVal);
-
-	return retVal;
-}
-
-function totalHarvesterThreads () {
-//	print("totalHarvesterThreads()");
-	var retVal = 0;
-
-	for (var i = 0; i < harvesters.length; i++) {
-		retVal += availableNodeThreads(harvesters[i]);
-	}
-
-	return retVal;
-}
-
-function maxSecurityRating() {
-//	print("maxSecurityRating()");
-	if (numMaxSecurityRating <= 0) {
-		for (var i = 0; i < nodes.length; i++) {
-			var securityLevel = getServerSecurityLevel(nodes[i]);
-
-			if (securityLevel > numMaxSecurityRating) {
-				numMaxSecurityRating = securityLevel;
+		for (var i = 0; i < harvesters.length; i++) {
+			if (availableNodeRam(harvesters[i].name) > availableNodeRam(numHarvesterIndex)) {
+				numHarvesterIndex = i;
 			}
 		}
+
+		return harvesters[i];
 	}
 
-	return numMaxSecurityRating;
-}
+	//note that this function works differently than the one for memory
+	//and they are not interchangeable
+	function harvesterWithMostAvailableThreads() {
+		var retHarvester = buildHarvester("", 0);
 
-function nodeProportion(nodeName) {
-//	print("nodeProportion(" + nodeName + ")");
-	var retVal = 0;
-
-	retVal = (getServerSecurityLevel(nodeName) / maxSecurityRating());
-
-	return retVal;
-}
-
-function totalProportion () {
-//	print("totalProportion()");
-	var retVal = 0;
-
-	for (var i = 0; i < nodes.length; i++) {
-		retVal += nodeProportion(nodes[i]);
-	}
-
-	return retVal;
-}
-
-function loadFileLines(fileName) {
-	var retVar = [];
-
-	if (fileExists(fileName)) {
-		var fileBuffer = read(fileName);
-		var fileString = "";
-
-		for (var i = 0; i < fileBuffer.length; i++) {
-			fileString = (fileString + fileBuffer[i]);
+		for (var i = 0; i < harvesters.length; i++) {
+			if (harvesters[i].availableThreads > retHarvester.availableThreads) {
+				retHarvester = harvesters[i];
+			}
 		}
 
-		retVar = fileString.split("\n");
+		return retHarvester;
 	}
 
-	return retVar;
-}
+	function availableHarvesterThreads(strNodeName) {
+		ns.print("availableNodeThreads()");
+		var retVal = (availableNodeRam(strNodeName) / numNodeScriptSize);
+		retVal = Math.floor(retVal);
 
-function loadNodes() {
-	if (fileExists(harvestersFile, "home")) {
-		harvesters = loadFileLines(harvestersFile);
+		if (retVal < 0) {
+			retVal = 0;
+		}
+
+		return retVal;
 	}
 
-	if (harvesters.length == 0) {
-		harvesters.push("home");
+	function totalHarvesterThreads() {
+		ns.print("totalHarvesterThreads()");
+		var retVal = 0;
+
+		for (var i = 0; i < harvesters.length; i++) {
+			retVal += harvesters[i].availableThreads;
+		}
+
+		return retVal;
 	}
 
-	if (fileExists(farmingFile, "home")) {
-		nodes = loadFileLines(farmingFile);
+	function maxSecurityRating() {
+		//ns.print("maxSecurityRating()");
+		var retVal = 0;
+
+		for (var i = 0; i < crops.length; i++) {
+			if (crops[i].securityLevel > retVal) {
+				retVal = crops[i].securityLevel;
+			}
+		}
+
+		if (retVal < 0) {
+			retVal = 0;
+		}
+
+		return retVal;
 	}
-	else {
-		print(farmingFile + " does not exist. Generating local farming file...");
 
-		if (fileExists(localFarmingFile) == false) {
-			nodes = scan(getHostname());
+	function nodeProportion(strNodeName) {
+		//ns.print("nodeProportion()");
+		var retVal = ns.getServerSecurityLevel(strNodeName) / maxSecurityRating();
 
-			for (var i = 0; i < nodes.length; i++) {
-				if (i > 0) {
-					write(localFarmingFile, "\n");
+		if (retVal < 0) {
+			retVal = 0;
+		}
+
+		return retVal;
+	}
+
+	function totalProportion() {
+		ns.print("totalProportion()");
+		var retVal = 0;
+
+		for (var i = 0; i < crops.length; i++) {
+			retVal += nodeProportion(crops[i].name);
+		}
+
+		return retVal;
+	}
+
+	function loadHarvesters() {
+		ns.print("loadHarvesters()");
+
+		if (ns.args.length == 0) {
+			var strHostName = ns.getHostname();
+			cleanHarvester(strHostName);
+			harvesters.push(buildHarvester(strHostName, availableHarvesterThreads(strHostName)));
+		}
+		else if (ns.args.length > 0) {
+			for (var i = 0; i < ns.args.length; i++) {
+				cleanHarvester(ns.args[i]);
+				harvesters.push(buildHarvester(ns.args[i], availableHarvesterThreads(ns.args[i])));
+			}
+		}
+
+		ns.print("	harvesters loaded:");
+
+		for (var i = 0; i < harvesters.length; i++) {
+			ns.print("		" + harvesters[i].name);
+		}
+	}
+
+	async function harvest(strHarvesterName, strCropName, numThreads) {
+		//ns.print("harvest()");
+
+		if (ns.hasRootAccess(strHarvesterName)) {
+			if (ns.hasRootAccess(strCropName)) {
+				//ns.print("farming " + strCropName + " on " + strHarvesterName + "...");
+
+				if (strHarvesterName != "home") {
+					await ns.scp(strNodeScriptFile, strHarvesterName);
 				}
 
-				write(localFarmingFile, nodes[i]);
-			}
-		}
-
-		exit;
-	}
-
-	print("currently loaded nodes:");
-	for (var i = 0; i < nodes.length; i++) {
-		print("	" + nodes[i]);
-	}
-}
-
-function balance() {
-	print("calculating thread proportions...");
-	var proportionalThreadsPerTarget = (totalHarvesterThreads() / totalProportion());
-	var threadsPerTarget = [];
-
-	for (var i = 0; i < nodes.length; i++) {
-		var threads = Math.floor((proportionalThreadsPerTarget * nodeProportion(nodes[i])));
-
-		if (threads <= 0) {
-			threads = 1;
-		}
-
-		threadsPerTarget.push({name: nodes[i], threads: threads});
-	}
-
-	print("sorting targets...");
-	threadsPerTarget.sort(
-		function (struct1, struct2) {
-			return (struct1.threads - struct2.threads);
-		}
-	);
-
-	print("harvesting targets...");
-	for (var i = 0; i < threadsPerTarget.length; i++) {
-		var harvester = harvesterWithMostAvailRam();
-		var threads = threadsPerTarget[i].threads;
-
-		if (availableNodeThreads(harvester) < threadsPerTarget[i].threads) {
-			threads = availableNodeThreads(harvester);
-		}
-
-		if (hasRootAccess(harvester)) {
-			if (hasRootAccess(threadsPerTarget[i].name)) {
-//				print("farming " + threadsPerTarget[i].name + " on " + harvester + "...");
-				scp(nodeScriptFile, harvester);
-				exec(nodeScriptFile, harvester, threads, threadsPerTarget[i].name, threads);
+				ns.exec(strNodeScriptFile, strHarvesterName, numThreads, strCropName, numThreads);
 			}
 		}
 	}
-}
 
-loadNodes();
-balance();
+	function loadCrop() {
+		ns.print("loadCrop()");
+		//TODO: figure out how to do a passable traversal of the network to build the candidate list
+		//var candidates = ns.scan(ns.getHostname());
+		var candidates = [
+			"n00dles",
+			"foodnstuff",
+			"sigma-cosmetics",
+			"joesguns",
+			"hong-fang-tea",
+			"harakiri-sushi",
+			"nectar-net",
+			"neo-net",
+			"phantasy",
+			"zer0",
+			"max-hardware",
+			"nectar-net",
+			"iron-gym",
+			"comptek",
+			"silver-helix",
+			"johnson-ortho",
+			"crush-fitness",
+			"omega-net",
+			"the-hub",
+			"rothman-uni",
+			"netlink",
+			"rho-construction",
+			"catalyst",
+			"aevum-police",
+			"millenium-fitness",
+			"alpha-ent",
+			"summit-uni",
+			"syscore",
+			"zeus-med",
+			"solaris",
+			"snap-fitness",
+			"unitalife",
+			"zb-def",
+			"nova-med",
+			"zb-institute",
+			"lexo-corp"
+		];
+
+		for (var i = 0; i < candidates.length; i++) {
+			if ((candidates[i] != "")
+				&& (candidates[i] != "home")
+				&& (candidates[i].startsWith(strHarvesterPrefix) == false)
+				&& (candidates[i] != ns.getHostname())
+				&& (crops.includes(candidates[i]) == false)
+				&& (ns.hasRootAccess(candidates[i]))
+				&& (ns.getServerMaxMoney(candidates[i]) > numMinServerMoney)
+			){
+				crops.push(buildCrop(candidates[i], ns.getServerSecurityLevel(candidates[i]), 0, false));
+			}
+		}
+
+		ns.print("	crops loaded:");
+
+		for (var i = 0; i < crops.length; i++) {
+			ns.print("		" + crops[i].name);
+		}
+	}
+
+	async function balance() {
+		ns.print("balance()");
+		ns.print("	calculating thread proportions...");
+		var numTotalAllocatedThreads = 0;
+		var numTotalAssignedThreads = 0;
+		var numTotalHarvesterThreads = totalHarvesterThreads();
+		var proportionalThreadsPerTarget = (numTotalHarvesterThreads / totalProportion());
+
+		//do some lazy "boundary alignment"
+		var numMostThreads = harvesterWithMostAvailableThreads();
+
+		if (numMostThreads < numMaxThreads) {
+			numMaxThreads = numMostThreads;
+		}
+
+		for (var i = 0; i < crops.length; i++) {
+			var numAllocatedThreads = Math.floor((proportionalThreadsPerTarget * nodeProportion(crops[i].name)));
+
+			if (numAllocatedThreads <= 0) {
+				numAllocatedThreads = numMinThreads;
+			}
+
+			if (numAllocatedThreads > numMaxThreads) {
+				numAllocatedThreads = numMaxThreads;
+			}
+
+			crops[i].allocatedThreads = numAllocatedThreads;
+			numTotalAllocatedThreads += crops[i].allocatedThreads;
+		}
+
+		ns.print("		the maximum number of threads that could be allocated for these crops is " + (crops.length * numMaxThreads));
+		ns.print("		allocated " + numTotalAllocatedThreads + " out of " + numTotalHarvesterThreads + " available threads...");
+		ns.print("		sorting crops...");
+		//the intention is the lowest index element requires the largest number of threads
+		//and the highest index element requires the lowest number of threads
+		crops.sort(
+			function (struct1, struct2) {
+				return (struct2.allocatedThreads - struct1.allocatedThreads);
+			}
+		);
+
+		for (var i = 0; i < crops.length; i++) {
+			ns.print("			" + crops[i].name + " with " + crops[i].allocatedThreads + " threads");
+		}
+
+		for (var i = 0; i < harvesters.length; i++) {
+			//ns.print("		allocating crops to " + harvesters[i].name);
+			var numHarvesterAllocatedThreads = 0;
+
+			//while (	(numHarvesterAllocatedThreads < (harvesters[i].availableThreads * numMinHarvesterUtilization))
+			//		&& (numTotalAssignedThreads < numTotalAllocatedThreads)
+			//	) {
+				for (var j = 0; j < crops.length; j++) {
+					//ns.print("			considering " + crops[j].name + "...");
+
+					if (crops[j].beingHarvested == false) {
+						//ns.print("				is not being harvested...");
+						if (crops[j].allocatedThreads < (harvesters[i].availableThreads - numHarvesterAllocatedThreads)) {
+							//ns.print("				sufficient threads available...");
+							await harvest(harvesters[i].name, crops[j].name, crops[j].allocatedThreads);
+							crops[j].beingHarvested = true;
+							numHarvesterAllocatedThreads += crops[j].allocatedThreads;
+							numTotalAssignedThreads += crops[j].allocatedThreads;
+						}
+					}
+				}
+			//}
+
+			harvesters[i].availableThreads -= numHarvesterAllocatedThreads;
+		}
+
+		ns.print("		assigned " + numTotalAssignedThreads + " threads in total");
+	}
+
+	await ns.sleep(3000);
+	loadHarvesters();
+	loadCrop();
+	await balance();
+}
