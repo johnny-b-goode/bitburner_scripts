@@ -1,7 +1,7 @@
 /** @param {NS} ns **/
 export async function main(ns) {
 	var strHarvesterPrefix = "harvester";
-	var strNodeScriptFile = "hack_node.script";
+	var strNodeScriptFile = "hack_node.ns";
 	var numSleepInterval = 10000;
 	var numNodeScriptSize = ns.getScriptRam(strNodeScriptFile, "home");
 	var numMinThreads = 1;
@@ -228,7 +228,17 @@ export async function main(ns) {
 			"zb-def",
 			"nova-med",
 			"zb-institute",
-			"lexo-corp"
+			"lexo-corp",
+			"aerocorp",
+			"galactic-cyber",
+			"omnia",
+			"icarus",
+			"infocomm",
+			"global-pharm",
+			"deltaone",
+			"defcomm",
+			"univ-energy",
+			"taiyang-digital"
 		];
 
 		for (var i = 0; i < candidates.length; i++) {

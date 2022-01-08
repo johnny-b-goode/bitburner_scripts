@@ -1,39 +1,42 @@
-//args[0] - args[n]
-var numWeakenRate = 0.05;
-var numMoneyThreshold = 0.75;
+/** @param {NS} ns **/
+export async function main(ns) {
+	//ns.args[0] - ns.args[n]
+	var numWeakenRate = 0.05;
+	var numMoneyThreshold = 0.75;
 
-disableLog("getServerSecurityLevel");
+	ns.disableLog("getServerSecurityLevel");
 
-if (args.length < 1) {
-	tprint ("Please specify a node name")
-	exit;
-}
-
-if (serverExists(args[0]) == false) {
-	tprint (args[0] + " does not exist")
-	exit;
-}
-
-if (hasRootAccess(args[0]) == false) {
-	tprint ("You do not currently have root access to " + args[0])
-	exit;
-}
-
-if (args.length >= 2) {
-	numWeakenRate *= args[1];
-}
-
-while(true) {
-	while (getServerSecurityLevel(args[0]) > (getServerMinSecurityLevel(args[0]) + numWeakenRate)) {
-//		print("weakinging " + args[0]);
-		weaken(args[0]);
+	if (ns.args.length < 1) {
+		tprint ("Please specify a node name")
+		exit;
 	}
 
-	if (getServerMoneyAvailable(args[0]) < (getServerMaxMoney(args[0]) * numMoneyThreshold)) {
-//		print("growing " + args[0]);
-		grow(args[0]);
+	if (ns.serverExists(ns.args[0]) == false) {
+		tprint (ns.args[0] + " does not exist")
+		exit;
 	}
-	else {
-		hack(args[0]);
+
+	if (ns.hasRootAccess(ns.args[0]) == false) {
+		tprint ("You do not currently have root access to " + ns.args[0])
+		exit;
+	}
+
+	if (ns.args.length >= 2) {
+		numWeakenRate *= ns.args[1];
+	}
+
+	while(true) {
+		while (ns.getServerSecurityLevel(ns.args[0]) > (ns.getServerMinSecurityLevel(ns.args[0]) + numWeakenRate)) {
+	//		print("weakinging " + ns.args[0]);
+			await ns.weaken(ns.args[0]);
+		}
+
+		if (ns.getServerMoneyAvailable(ns.args[0]) < (ns.getServerMaxMoney(ns.args[0]) * numMoneyThreshold)) {
+	//		print("growing " + ns.args[0]);
+			await ns.grow(ns.args[0]);
+		}
+		else {
+			await ns.hack(ns.args[0]);
+		}
 	}
 }
