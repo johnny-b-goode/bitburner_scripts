@@ -2,7 +2,7 @@
 export async function main(ns) {
 	var bufferMoney = 200000;
 	var numHacknetProductionPercent = 0.25;
-	var numSleepInterval = 10000;
+	var numSleepInterval = 10;
 	var numSleepTimeMax = 3600000;
 	var referenceNode = 0;
 	var numMaxNodes = 32;
@@ -18,6 +18,26 @@ export async function main(ns) {
 	if (ns.args.length > 0) {
 		if (ns.args[0] >= 0) {
 			bufferMoney = ns.args[0];
+		}
+	}
+
+	if (ns.args.length > 1) {
+		if (ns.args[1] >= 0) {
+			numHacknetProductionPercent = ns.args[1];
+		}
+
+		if (numHacknetProductionPercent > 1) {
+			numHacknetProductionPercent = 1;
+		}
+	}
+
+	if (ns.args.length > 2) {
+		if (ns.args[2] > 0) {
+			numMaxNodes = ns.args[2];
+		}
+
+		if (numMaxNodes > 64) {
+			numMaxNodes = 64;
 		}
 	}
 
@@ -46,16 +66,26 @@ export async function main(ns) {
 	}
 
 	function getWaitTime (numUpgradeCost) {
-		ns.print("getWaitTime()");
-		//a somewhat naive calculation, but should be close enough
-		var numSleepTime = ((numUpgradeCost - (ns.getServerMoneyAvailable("home") - bufferMoney)) / ((ns.hacknet.getNodeStats(referenceNode).production * ns.hacknet.numNodes()) * (1 / numHacknetProductionPercent)));
-		numSleepTime = Math.ceil(numSleepTime);
-		numSleepTime *= 1000;
-		numSleepTime += 1000;
+//		ns.print("getWaitTime()");
+		var retVal = 0;
 
-		if (numSleepTime > numSleepTimeMax) {
-			numSleepTime = numSleepTimeMax;
+		if (numUpgradeCost > 0) {
+			//a somewhat naive calculation, but should be close enough
+			retVal = (numUpgradeCost / ((ns.hacknet.getNodeStats(referenceNode).production * ns.hacknet.numNodes()) * (1 / numHacknetProductionPercent)));
+			retVal = Math.ceil(retVal);
+			retVal *= 1000;
+			retVal += 1000;
+
+			if (retVal < 0) {
+				retVal = 0;
+			}
+
+			if (retVal > numSleepTimeMax) {
+				retVal = numSleepTimeMax;
+			}
 		}
+
+		return retVal;
 	}
 
 	while (true) {
@@ -74,7 +104,7 @@ export async function main(ns) {
 					ns.hacknet.upgradeLevel(i, 1);
 				}
 				else {
-					await ns.sleep(numSleepInterval);
+					await ns.sleep(getWaitTime((ns.hacknet.getLevelUpgradeCost(i, 1) - (ns.getServerMoneyAvailable("home") - bufferMoney))));
 				}
 			}
 
@@ -83,7 +113,7 @@ export async function main(ns) {
 					ns.hacknet.upgradeRam(i, 1);
 				}
 				else {
-					await ns.sleep(numSleepInterval);
+					await ns.sleep(getWaitTime((ns.hacknet.getRamUpgradeCost(i, 1) - (ns.getServerMoneyAvailable("home") - bufferMoney))));
 				}
 			}
 
@@ -92,7 +122,7 @@ export async function main(ns) {
 					ns.hacknet.upgradeCore(i, 1);
 				}
 				else {
-					await ns.sleep(numSleepInterval);
+					await ns.sleep(getWaitTime((ns.hacknet.getCoreUpgradeCost(i, 1) - (ns.getServerMoneyAvailable("home") - bufferMoney))));
 				}
 			}
 		}
@@ -178,7 +208,6 @@ export async function main(ns) {
 
 		while (costs[cheapestOption] > (ns.getServerMoneyAvailable("home") - bufferMoney)) {
 			await ns.sleep(getWaitTime(costs[cheapestOption]));
-			//print ("available funds: " + (getServerMoneyAvailable("home") - bufferMoney));
 		}
 
 		if (costs[cheapestOption] <= (ns.getServerMoneyAvailable("home") - bufferMoney)) {
@@ -201,6 +230,6 @@ export async function main(ns) {
 		}
 
 		//to prevent an error
-		await ns.sleep(10);
+		await ns.sleep(numSleepInterval);
 	}
 }
