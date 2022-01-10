@@ -45,6 +45,19 @@ export async function main(ns) {
 		return retVar;
 	}
 
+	function getWaitTime (numUpgradeCost) {
+		ns.print("getWaitTime()");
+		//a somewhat naive calculation, but should be close enough
+		var numSleepTime = ((numUpgradeCost - (ns.getServerMoneyAvailable("home") - bufferMoney)) / ((ns.hacknet.getNodeStats(referenceNode).production * ns.hacknet.numNodes()) * (1 / numHacknetProductionPercent)));
+		numSleepTime = Math.ceil(numSleepTime);
+		numSleepTime *= 1000;
+		numSleepTime += 1000;
+
+		if (numSleepTime > numSleepTimeMax) {
+			numSleepTime = numSleepTimeMax;
+		}
+	}
+
 	while (true) {
 		if (ns.hacknet.numNodes() <= 0) {
 			ns.print("there are currently no nodes in the hacknet");
@@ -164,18 +177,7 @@ export async function main(ns) {
 		}
 
 		while (costs[cheapestOption] > (ns.getServerMoneyAvailable("home") - bufferMoney)) {
-			//sleep(numSleepInterval);
-			//a somewhat naive calculation, but should be close enough
-			var numSleepTime = ((costs[cheapestOption] - (ns.getServerMoneyAvailable("home") - bufferMoney)) / ((ns.hacknet.getNodeStats(referenceNode).production * ns.hacknet.numNodes()) * (1 / numHacknetProductionPercent)));
-			numSleepTime = Math.ceil(numSleepTime);
-			numSleepTime *= 1000;
-			numSleepTime += 1000;
-
-			if (numSleepTime > numSleepTimeMax) {
-				numSleepTime = numSleepTimeMax;
-			}
-
-			await ns.sleep(numSleepTime);
+			await ns.sleep(getWaitTime(costs[cheapestOption]));
 			//print ("available funds: " + (getServerMoneyAvailable("home") - bufferMoney));
 		}
 
