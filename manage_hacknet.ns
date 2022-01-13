@@ -2,7 +2,7 @@
 export async function main(ns) {
 	var bufferMoney = 200000;
 	var numHacknetProductionPercent = 0.25;
-	var numSleepInterval = 10;
+	var numSleepInterval = 10000;
 	var numSleepTimeMax = 3600000;
 	var referenceNode = 0;
 	var numMaxNodes = 32;
@@ -21,31 +21,72 @@ export async function main(ns) {
 		}
 	}
 
-	if (ns.args.length > 1) {
-		if (ns.args[1] >= 0) {
-			numHacknetProductionPercent = ns.args[1];
-		}
-
-		if (numHacknetProductionPercent > 1) {
-			numHacknetProductionPercent = 1;
-		}
-	}
-
-	if (ns.args.length > 2) {
-		if (ns.args[2] > 0) {
-			numMaxNodes = ns.args[2];
-		}
-
-		if (numMaxNodes > 64) {
-			numMaxNodes = 64;
-		}
-	}
-
-	function calculateLevelUpgradeProfit () {
+	//0 == new node
+	//1 == level
+	//2 == ram
+	//3 == cores
+	function levelUpgradeProfitDeltaPerSec (numUpgradeType) {
 		ns.print("calculateLevelUpgradeProfit()");
-		var retVar = 0;
 
-		//
+		if ((numUpgradeType != 0)
+			&& (numUpgradeType != 1)
+			&& (numUpgradeType != 2)
+			&& (numUpgradeType != 3)
+			) {
+			ns.print("	ERROR invalid value for numUpgradeType");
+		}
+
+		var retVar = 0;
+		var nodeStats = ns.hacknet.getNodeStats(referenceNode);
+		var numCurrentRate = 0;
+		var numFutureRate = 0;
+
+		if (ns.fileExists("Formulas.exe", "home")) {
+			//https://github.com/danielyxie/bitburner/blob/dev/markdown/bitburner.hacknetnodesformulas.moneygainrate.md
+			numCurrentRate = ns.formulas.calculateMoneyGainRate(nodeStats.level, nodeStats.ram, nodeStats.cores, ns.getHacknetMultipliers().production);
+
+			if (numUpgradeType == 0) {
+				numFutureRate = ns.formulas.calculateMoneyGainRate(1, 1, 1, ns.getHacknetMultipliers().production);
+				retVar = numFutureRate;
+			}
+			else if (numUpgradeType == 1) {
+				numFutureRate = ns.formulas.calculateMoneyGainRate((nodeStats.level + 1), nodeStats.ram, nodeStats.cores, ns.getHacknetMultipliers().production);
+				retVar = (numFutureRate - numCurrentRate);
+			}
+			else if (numUpgradeType == 2) {
+				numFutureRate = ns.formulas.calculateMoneyGainRate(nodeStats.level, (nodeStats.ram + 1), nodeStats.cores, ns.getHacknetMultipliers().production);
+				retVar = (numFutureRate - numCurrentRate);
+			}
+			else if (numUpgradeType == 3) {
+				numFutureRate = ns.formulas.calculateMoneyGainRate(nodeStats.level, nodeStats.ram, (nodeStats.cores + 1), ns.getHacknetMultipliers().production);
+				retVar = (numFutureRate - numCurrentRate);
+			}
+		}
+		else {
+			//just re-implement the formula...
+			function jankyMoneyGainRate(numLevel, numRam, numCores) {
+				return ((1.5 * numLevel) * Math.pow(1.035, numRam - 1) * ((numCores + 5) / 6) * ns.getHacknetMultipliers().production * ns.getBitNodeMultipliers().HacknetNodeMoney);
+			}
+
+			numCurrentRate = jankyMoneyGainRate(nodeStats.level, nodeStats.ram, nodeStats.cores);
+
+			if (numUpgradeType == 0) {
+				numFutureRate = jankyMoneyGainRate(1, 1, 1);
+				retVar = numFutureRate;
+			}
+			else if (numUpgradeType == 1) {
+				numFutureRate = jankyMoneyGainRate((nodeStats.level + 1), nodeStats.ram, nodeStats.cores);
+				retVar = (numFutureRate - numCurrentRate);
+			}
+			else if (numUpgradeType == 2) {
+				numFutureRate = jankyMoneyGainRate(nodeStats.level, (nodeStats.ram + 1), nodeStats.cores);
+				retVar = (numFutureRate - numCurrentRate);
+			}
+			else if (numUpgradeType == 3) {
+				numFutureRate = jankyMoneyGainRate(nodeStats.level, nodeStats.ram, (nodeStats.cores + 1));
+				retVar = (numFutureRate - numCurrentRate);
+			}
+		}
 
 		return retVar;
 	}
@@ -66,26 +107,16 @@ export async function main(ns) {
 	}
 
 	function getWaitTime (numUpgradeCost) {
-//		ns.print("getWaitTime()");
-		var retVal = 0;
+		ns.print("getWaitTime()");
+		//a somewhat naive calculation, but should be close enough
+		var numSleepTime = ((numUpgradeCost - (ns.getServerMoneyAvailable("home") - bufferMoney)) / ((ns.hacknet.getNodeStats(referenceNode).production * ns.hacknet.numNodes()) * (1 / numHacknetProductionPercent)));
+		numSleepTime = Math.ceil(numSleepTime);
+		numSleepTime *= 1000;
+		numSleepTime += 1000;
 
-		if (numUpgradeCost > 0) {
-			//a somewhat naive calculation, but should be close enough
-			retVal = (numUpgradeCost / ((ns.hacknet.getNodeStats(referenceNode).production * ns.hacknet.numNodes()) * (1 / numHacknetProductionPercent)));
-			retVal = Math.ceil(retVal);
-			retVal *= 1000;
-			retVal += 1000;
-
-			if (retVal < 0) {
-				retVal = 0;
-			}
-
-			if (retVal > numSleepTimeMax) {
-				retVal = numSleepTimeMax;
-			}
+		if (numSleepTime > numSleepTimeMax) {
+			numSleepTime = numSleepTimeMax;
 		}
-
-		return retVal;
 	}
 
 	while (true) {
@@ -104,7 +135,7 @@ export async function main(ns) {
 					ns.hacknet.upgradeLevel(i, 1);
 				}
 				else {
-					await ns.sleep(getWaitTime((ns.hacknet.getLevelUpgradeCost(i, 1) - (ns.getServerMoneyAvailable("home") - bufferMoney))));
+					await ns.sleep(numSleepInterval);
 				}
 			}
 
@@ -113,7 +144,7 @@ export async function main(ns) {
 					ns.hacknet.upgradeRam(i, 1);
 				}
 				else {
-					await ns.sleep(getWaitTime((ns.hacknet.getRamUpgradeCost(i, 1) - (ns.getServerMoneyAvailable("home") - bufferMoney))));
+					await ns.sleep(numSleepInterval);
 				}
 			}
 
@@ -122,7 +153,7 @@ export async function main(ns) {
 					ns.hacknet.upgradeCore(i, 1);
 				}
 				else {
-					await ns.sleep(getWaitTime((ns.hacknet.getCoreUpgradeCost(i, 1) - (ns.getServerMoneyAvailable("home") - bufferMoney))));
+					await ns.sleep(numSleepInterval);
 				}
 			}
 		}
@@ -143,59 +174,52 @@ export async function main(ns) {
 		}
 
 		var cheapestOption = findMinInArray(costs);
+		var numCurrentMoney = (ns.getServerMoneyAvailable("home") - bufferMoney);
+
+		//this is still somewhat naive, but should be considerably better than what I had
+		//it does not take into account the incremental purchase of upgrades (vs a new node)
+		//
+		//this is a relative comparison, so whatever is being compared is always baselined
+		//against the cheapestOption
+		for (var i = 0; i < costs.length; i++) {
+			if (i != cheapestOption) {
+				var numDeltaTime = getWaitTime(costs[i] - numCurrentMoney) - getWaitTime(costs[cheapestOption] - numCurrentMoney);
+				var numDeltaMoney = levelUpgradeProfitDeltaPerSec(i);
+
+				if (i != 0) {
+					numDeltaMoney *= ns.hacknet.numNodes();
+				}
+
+				var numDeltaProfit = (numDeltaMoney * numDeltaTime);
+				var numAdjustedCost = (costs[i] - numDeltaProfit);
+				var numProfitabilityRatio = (numDeltaProfit / numAdjustedCost);
+				var numCheapestOptionMoney = levelUpgradeProfitDeltaPerSec(cheapestOption);
+
+				if (cheapestOption != 0) {
+					numCheapestOptionMoney*= ns.hacknet.numNodes();
+				}
+
+				var numCheapestOptionProfitabilityRatio = (numCheapestOptionMoney / costs[cheapestOption]);
+
+				if (numProfitabilityRatio > numCheapestOptionProfitabilityRatio) {
+					ns.print("option" + i + " with a profitability ratio of " + numProfitabilityRatio + " is now the best option");
+					cheapestOption = i;
+				}
+			}
+		}
 
 		ns.print("costs[0]: " + costs[0]);
 		ns.print("costs[1]: " + costs[1]);
 		ns.print("costs[2]: " + costs[2]);
 		ns.print("costs[3]: " + costs[3]);
-		ns.print("the cheapest option is costs[" + cheapestOption + "]");
+		ns.print("the cheapest option is costs[" + findMinInArray(costs) + "]");
+		ns.print("the option with the best profitability ratio is costs[" + cheapestOption + "]");
 
 		if (costs[cheapestOption] == Infinity) {
 			ns.print("no more upgrades available");
 			break;
 		}
 
-		//The best I have come up with to optimize earning rate is rather complicated,
-		//but basically it would be to generate the cost of the next upgrade for each option,
-		//then to generate the cost of the second upgrade for that same option.
-		//
-		//The next step would be to calculate the time to purchase the next upgrade for each
-		//option, then to calculate the opportunity cost for each option (compared to each
-		//other option). Basically, this would be the time to purchase for a given option
-		//minus the time to purchase for the other options (where time to purchase for
-		//evaluated option is less than for the given option), multiplied by the future
-		//earning power for the evaluated option minus the current earning power (the
-		//difference with the evaluated option). For each option, there could be multiple
-		//different opportunity costs as compared to each other option. We could call this
-		//"immediate opportunity cost".
-		//
-		//The third step would be to calculate the cost for the next cheapest upgrade (ie,
-		//looking one step into the future), which would require two sets of calculations.
-		//The first would be to calculate the cost of the next upgrade for that option
-		//(theoretically, the cost of two levels of upgrade minus the cost of a single
-		//level of upgrade). The second set of calculations would be to compare the
-		//cheapest option from the first set to any of the remaining options (ie, it may
-		//be cheaper to purchase an upgrade in level now, but that the current cost of a
-		//RAM upgrade would then be cheaper than any of the next upgrade options [ie, 2
-		//levels of upgrade minus one level of upgrade]). This means the next cheapest
-		//upgrade could be different for each upgrade option.
-		//
-		//Once the next cheapest upgrade for each option is known, the new earn rate for
-		//each (current) upgrade option would need to be calculated, then the time it
-		//would take to purchase the next upgrade. The total earnings for the other
-		//upgrade options within that time could then be calculated. We could call this
-		//"deferred opportunity cost".
-		//
-		//The last step would be to evaluate the two sets of opportunity costs. It could
-		//be possible to have an option with higher immediate opportunity costs, but
-		//lower deferred opportunity costs (ie, costs a little more now, but earns more
-		//faster).
-		//
-		//In essence, I think the best option would be the one to get us to the next
-		//upgrade the fastest.
-
-		//a little bit of trickery to optimize the process of purchasing the selected
-		//upgrade
 		if (cheapestOption == 1) {
 			costs[cheapestOption] = ns.hacknet.getLevelUpgradeCost(referenceNode, 1);
 		}
@@ -208,6 +232,7 @@ export async function main(ns) {
 
 		while (costs[cheapestOption] > (ns.getServerMoneyAvailable("home") - bufferMoney)) {
 			await ns.sleep(getWaitTime(costs[cheapestOption]));
+			//print ("available funds: " + (getServerMoneyAvailable("home") - bufferMoney));
 		}
 
 		if (costs[cheapestOption] <= (ns.getServerMoneyAvailable("home") - bufferMoney)) {
@@ -230,6 +255,6 @@ export async function main(ns) {
 		}
 
 		//to prevent an error
-		await ns.sleep(numSleepInterval);
+		await ns.sleep(10);
 	}
 }

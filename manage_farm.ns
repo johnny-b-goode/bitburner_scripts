@@ -1,0 +1,90 @@
+/** @param {NS} ns **/
+export async function main(ns) {
+	var numBufferMoney = 2000000;
+	var numHarvesterPurchaseThreshold = 0.01;
+	var numSleepInterval = 10;
+	var numSleepTimeMax = 3600000;
+	var numMaxHarvesters = 16;
+	var numAmountRam = ns.getPurchasedServerMaxRam();
+	var numMaxTimeBeforeFarm = 3600000;
+	var strFarmScript = "farm.ns";
+	var strHarvesterPrefix = "harvester-";
+
+	if (ns.args.length > 0) {
+		if (ns.args[0] >= 0) {
+			numBufferMoney = ns.args[0];
+		}
+	}
+
+	if (ns.args.length > 1) {
+		if (ns.args[1] > 0) {
+			numMaxHarvesters = ns.args[1];
+		}
+
+		if (numMaxHarvesters > ns.getPurchasedServerLimit()) {
+			numMaxHarvesters = ns.getPurchasedServerLimit();
+		}
+	}
+
+	if (ns.args.length > 2) {
+		if (ns.args[2] > 0) {
+			numAmountRam = ns.args[2];
+		}
+
+		if (numAmountRam > ns.getPurchasedServerMaxRam()) {
+			numAmountRam = ns.getPurchasedServerMaxRam();
+		}
+	}
+
+	function getWaitTime (numUpgradeCost) {
+		//ns.print("getWaitTime()");
+		var retVal = 0;
+
+		if (numUpgradeCost > 0) {
+			retVal = (numUpgradeCost / ns.getScriptIncome()[0]);
+			retVal = Math.ceil(retVal);
+			retVal *= 1000;
+			retVal += 1000;
+
+			if (retVal < 0) {
+				retVal = 0;
+			}
+
+			if (retVal > numSleepTimeMax) {
+				retVal = numSleepTimeMax;
+			}
+		}
+
+		return retVal;
+	}
+
+	await ns.sleep(10000);
+
+	if ((numMaxHarvesters * numAmountRam) >= (ns.getServerMaxRam("home") * numHarvesterPurchaseThreshold)) {
+		//ns.print("purchasing harvesters...");
+
+		while (ns.getPurchasedServers().length < numMaxHarvesters) {
+			var numWaitTime = getWaitTime((ns.getPurchasedServerCost(numAmountRam) - (ns.getServerMoneyAvailable("home") - numBufferMoney)));
+			await ns.sleep(numWaitTime);
+
+			if (numWaitTime > numMaxTimeBeforeFarm) {
+				ns.exec(strFarmScript, "home", 1, ...ns.getPurchasedServers());
+			}
+
+			if ((ns.getServerMoneyAvailable("home") - numBufferMoney) > ns.getPurchasedServerCost(numAmountRam)) {
+				var strServerName = strHarvesterPrefix;
+
+				if (ns.getPurchasedServers().length <= 0) {
+					strServerName = (strServerName + "01");
+				}
+				else {
+					strServerName = (strServerName + (ns.getPurchasedServers().length + 1).slice(-2));
+				}
+
+				ns.purchaseServer(strServerName, numAmountRam);
+			}
+		}
+
+		ns.exec(strFarmScript, "home", 1, ...ns.getPurchasedServers());
+	}
+}
